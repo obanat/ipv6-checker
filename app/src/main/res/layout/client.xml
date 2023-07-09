@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:background="@android:color/transparent"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+
+    <RadioGroup
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center">
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
+            <RadioButton android:id="@+id/radio_client" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="客户端模式" />
+            <RadioButton android:id="@+id/radio_server" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="服务器模式" />
+        </LinearLayout>
+    </RadioGroup>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="运营商：" />
+        <TextView android:id="@+id/op_name" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="网络类型：" />
+        <TextView android:id="@+id/network_type" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="公网ipv6：" />
+        <TextView android:id="@+id/ipv6_public" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="本地ipv6：" />
+        <TextView android:id="@+id/ipv6_local" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="srv地址：" />
+        <TextView android:id="@+id/server_ip" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+
+    <Button
+        android:id="@+id/load_web"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="加载网页" />
+
+    <WebView
+        android:id="@+id/web_view"
+        android:layout_width="match_parent"
+        android:layout_height="400dp" />
+
+    <ImageButton
+        android:id="@+id/setting_button"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:layout_gravity="bottom|left"
+        android:layout_marginLeft="30dp"
+        android:layout_marginBottom="20dp"
+        android:background="@android:color/transparent"
+        android:src="@drawable/button_settings" />
+
+</LinearLayout>
