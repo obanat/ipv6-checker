@@ -3,8 +3,7 @@ package com.obana.ipv6;
 import android.app.Activity;
 
 import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
+
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -29,8 +28,6 @@ import android.widget.Toast;
 
 import com.obana.ipv6.utils.AppLog;
 
-import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -38,10 +35,17 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.net.UnknownHostException;
 import java.util.Enumeration;
+
+import javax.net.SocketFactory;
 
 public class MainActivity extends Activity implements View.OnClickListener {
     public static final String TAG = "MainActivity";
@@ -56,6 +60,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
     public static final int MESSAGE_GET_SERVER_IPV6 = 1004;
     public static final int MESSAGE_UPDATE_LOCAL_IP = 1005;
 
+    public static final int MESSAGE_UPDATE_CLIENT_IP = 1006;
+    public static final int MESSAGE_CONNECT_TO_SERVER = 1007;
+    public static final int MESSAGE_PUNCHING_STATUS = 1008;
     public static final int MESSAGE_MAKE_TOAST = 6001;
     public static final boolean SHOW_DEBUG_MESSAGE = true;
     public static final String BUNDLE_KEY_TOAST_MSG = "Tmessage";
@@ -63,13 +70,22 @@ public class MainActivity extends Activity implements View.OnClickListener {
     public static final int RECONNECT_DELAY_MS = 5000;
     public static final int HTTP_SERVER_PORT = 38000;
 
+    private static final int CLIENT_LOCAL_SOCKET_PORT = 35555;
+    private static final int SERVER_LISTEN_SOCKET_PORT = 35555;
+
+    private static final int PUNCHING_STATUS_ERROR_IP = 1001;
+    private static final int PUNCHING_STATUS_ERROR_SOCKET = 1002;
+
+    private static final int PUNCHING_STATUS_ERROR_OK = 1000;
     private Handler handler = null;
     private int mWorkMode = LAYOUT_DEFAULT;
 
     private RadioButton mRadioClient,mRadioServer;
     private TextView mTextViewIpv6,mTextViewIpv6Local;
     private TextView mTextViewNetworkName,mTextViewNetworkType;
+    private TextView mTextViewClientIp,mTextViewPunchingStatus;
 
+    private TextView mTextViewConnect2ServerStatus;
     private Network mWifiNetwork;
     private Network mCellNetwork;
 
@@ -103,6 +119,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         mTextViewNetworkName = findViewById(R.id.op_name);
         mTextViewNetworkType = findViewById(R.id.network_type);
 
+        mUploadStatus = findViewById(R.id.upload_status);
 
         mSetttingsBtn = findViewById(R.id.setting_button);
 
@@ -142,14 +159,34 @@ public class MainActivity extends Activity implements View.OnClickListener {
         } else {
             setContentView(R.layout.server);
             initServerLayout();
+
+
+            //first punching hole
+            if (!clientIp.isEmpty()) sentPunchingSignal(mCellNetwork, clientIp, CLIENT_LOCAL_SOCKET_PORT);
+
+            //then create server socket
             prepareServer();
         }
         String carrierName = mTm.getNetworkOperatorName();
         mTextViewNetworkName.setText(carrierName);
-        refreshNetworkType();
-        requestNetwork();
+        //refreshNetworkType();
+        //requestNetwork();
 
         //getPublicIpv6(null);
+
+        Message msg1 = new Message();
+        msg1.what = MESSAGE_UPDATE_LOCAL_IP;
+        handler.sendMessage(msg1);
+
+        Message msg2 = new Message();
+        msg2.what = MESSAGE_UPDATE_CLIENT_IP;
+        handler.sendMessage(msg2);
+
+        Message msg3 = new Message();
+        msg3.what = MESSAGE_UPDATE_PUBLIC_IP;
+        handler.sendMessage(msg3);
+
+        refreshNetworkType();
     }
 
     private void initClientLayout() {
@@ -169,6 +206,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         mLoadWebBtn = findViewById(R.id.load_web);
         mTextViewServerIpv6 = findViewById(R.id.server_ip);
 
+        mTextViewConnect2ServerStatus = findViewById(R.id.connect_status);
         mLoadWebBtn.setOnClickListener(this);
     }
 
@@ -176,7 +214,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         //getServerIpv6();
 
     }
-
+    private ServerSocket serverSocket = null;
     private void prepareServer() {
         if (mHttpServer == null) {
             mHttpServer = new HttpServer(HTTP_SERVER_PORT, this);
@@ -185,7 +223,12 @@ public class MainActivity extends Activity implements View.OnClickListener {
             if (!mHttpServer.wasStarted()) {
                 mHttpServer.start();
             }
-            mHttpStatus.setText("http server success");
+
+            serverSocket = serverSocket != null ? serverSocket : new ServerSocket();
+            serverSocket.setReuseAddress(true);
+            serverSocket.bind(new InetSocketAddress(SERVER_LISTEN_SOCKET_PORT));
+
+            mHttpStatus.setText("http server success,listening " + SERVER_LISTEN_SOCKET_PORT + " ....");
         }catch(Exception e){
             AppLog.e(TAG,"start http server error:"+e.getMessage());
             mHttpStatus.setText("http server failed");
@@ -208,9 +251,14 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
         mUploadStatus = findViewById(R.id.upload_status);
         mHttpStatus = findViewById(R.id.http_status);
+
+        mTextViewClientIp = findViewById(R.id.ipv6_client);
+        mTextViewPunchingStatus = findViewById(R.id.punching_status);
+
     }
 
-
+    private Socket clientSocket = null;
+    private int clientSocketLocalPort = -1;
     public void requestNetwork() {
         mWifiNetwork = null;
         mCellNetwork = null;
@@ -232,10 +280,22 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
                 getLocalIpv6(network,cm);
                 getPublicIpv6(network);
-                if (mWorkMode == LAYOUT_CLIENT) {
-                    getServerIpv6(network);
-                } else {
-                    //uploadServerIp(network);
+
+                getServerIpv6(network);
+                getClientIpv6(network);
+                if (mWorkMode == LAYOUT_CLIENT && clientSocket == null) {
+                    try {
+                        clientSocket = SocketFactory.getDefault().createSocket();
+                        network.bindSocket(clientSocket);
+                        clientSocket.setReuseAddress(true);
+                        clientSocket.bind(new InetSocketAddress(CLIENT_LOCAL_SOCKET_PORT));
+                        clientSocketLocalPort = clientSocket.getLocalPort();
+
+                        mTextViewConnect2ServerStatus.setText(""+clientSocketLocalPort);
+                    } catch (IOException e) {
+                        AppLog.e(TAG, "---> network request: e:" + e.getMessage());
+                    }
+
                 }
 
             }
@@ -310,6 +370,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
             }
         } else if (view == mLoadWebBtn) {
             mWeb.loadUrl("http://obana.f3322.org:38086");
+            if (!serverIp.isEmpty() && mCellNetwork != null) connect2Server(mCellNetwork, serverIp, SERVER_LISTEN_SOCKET_PORT);
         }
     }
     public boolean onKeyDown(int paramInt, KeyEvent paramKeyEvent) {
@@ -388,6 +449,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     public boolean handleMessageinUI(Message msg) {
         boolean handled = false;
+        String tmpString = "";
         switch (msg.what) {
             case MESSAGE_UPDATE_PUBLIC_IP:
                 String ip = (String)msg.obj;//TODO: for feature use
@@ -396,7 +458,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 break;
             case MESSAGE_UPLOAD_IP_STATUS:
                 String status = (String)msg.obj;
-                mUploadStatus.setText(status);
+                if (mUploadStatus != null) mUploadStatus.setText(status);
                 handled = true;
                 break;
             case MESSAGE_GET_SERVER_IPV6:
@@ -405,9 +467,24 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 handled = true;
                 break;
             case MESSAGE_UPDATE_LOCAL_IP:
-                mTextViewServerIpv6.setText("[" + msg.obj + "]\r\n" + localIpV6Address);
+                mTextViewIpv6Local.setText("[" + msg.obj + "]\r\n" + localIpV6Address);
                 handled = true;
                 break;
+            case MESSAGE_UPDATE_CLIENT_IP:
+                if (mTextViewClientIp != null) mTextViewClientIp.setText(clientIp);
+                handled = true;
+                break;
+            case MESSAGE_PUNCHING_STATUS:
+                tmpString = msg.obj != null?(String)msg.obj : "OK...";
+                if (mTextViewPunchingStatus != null) mTextViewPunchingStatus.setText(tmpString);
+                handled = true;
+                break;
+            case MESSAGE_CONNECT_TO_SERVER:
+                tmpString = msg.obj != null?(String)msg.obj : "OK...";
+                if (mTextViewConnect2ServerStatus != null) mTextViewConnect2ServerStatus.setText(tmpString);
+                handled = true;
+                break;
+
             default:
                 handled = false;
                 break;
@@ -504,9 +581,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     publicIpV6Address = "error";
                 }
 
-                if (mWorkMode == LAYOUT_SERVER) {
-                    uploadServerIp(network);
-                }
+                //if (mWorkMode == LAYOUT_SERVER) {
+                    uploadIp2Redis(network);
+                //}
                 handler.sendMessage(msg);
                 networkRunning = false;
             }
@@ -518,11 +595,14 @@ public class MainActivity extends Activity implements View.OnClickListener {
         //}
     }
 
-    private static final String P2P_HOST_URL = "http://obana.f3322.org:38086/wificar/getClientIp?mac=com.obana.ipv6";
+    private static final String P2P_HOST_URL = "http://obana.f3322.org:38086/wificar/getClientIp?mac=server";
+    private String serverIp = "";
     private void getServerIpv6(final Network network) {
         Runnable serverIpv6Runnable = new Runnable() {
             @Override
             public void run() {
+                serverIp = "";//clear buffer
+
                 StringBuffer sb = new StringBuffer();
                 String hostUrl = P2P_HOST_URL;
                 AppLog.i(TAG, "getServerIpv6:  " + hostUrl);
@@ -547,7 +627,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 Message msg = new Message();
                 msg.what = MESSAGE_GET_SERVER_IPV6;
                 if(sb.length() > 10) {
-
+                    serverIp = sb.toString();
                     AppLog.i(TAG, "getServerIpv6 ip:" + sb);
                     msg.obj = sb.toString();
                 }
@@ -557,25 +637,161 @@ public class MainActivity extends Activity implements View.OnClickListener {
         new Thread(serverIpv6Runnable).start();
     }
 
-    public void uploadServerIp(final Network network) {
+
+    private static final String GET_CLIENT_IP_URL = "http://obana.f3322.org:38086/wificar/getClientIp?mac=client";
+    private String clientIp = "";
+    private void getClientIpv6(final Network network) {
+        Runnable clientIpv6Runnable = new Runnable() {
+            @Override
+            public void run() {
+                clientIp = "";//clear buffer
+
+                StringBuffer sb = new StringBuffer();
+                String hostUrl = GET_CLIENT_IP_URL;
+                AppLog.i(TAG, "getClientIpv6:  " + hostUrl);
+
+                if (network == null ) return;
+                try {
+                    URL updateURL = new URL(hostUrl);
+                    URLConnection conn = network.openConnection(updateURL);
+                    BufferedReader rd = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF8"));
+                    while (true) {
+                        String s = rd.readLine();
+                        if (s == null) {
+                            break;
+                        }
+                        sb.append(s);
+                    }
+                } catch (Exception e){
+
+                }
+
+                AppLog.i(TAG, "getClientIpv6, response: " + sb + " len:" + sb.length());
+                Message msg = new Message();
+                msg.what = MESSAGE_UPDATE_CLIENT_IP;
+
+                AppLog.i(TAG, "getClientIpv6 ip:" + sb);
+                msg.obj = sb.toString();
+                clientIp = sb.toString();
+
+                handler.sendMessage(msg);
+            }
+        };
+        new Thread(clientIpv6Runnable).start();
+    }
+
+    private void sentPunchingSignal(final Network network, final String ip, final int port) {
+        //step 1:
+        Runnable punchingRunnable = new Runnable() {
+            @Override
+            public void run() {
+
+                InetAddress addr = null;
+
+                Message msg = new Message();
+                msg.what = MESSAGE_PUNCHING_STATUS;
+
+                try {
+                    addr = InetAddress.getByName(ip);
+                } catch (IOException e) {
+                    AppLog.e(TAG, "punching client get ip error!");
+
+                    msg.obj = e.getMessage();
+                }
+                AppLog.i(TAG, "punching client >>>> ip:port [ IP:" + ip + " port:" + port);
+
+                InetSocketAddress inetSocketAddress = new InetSocketAddress(addr, port);
+
+                AppLog.i(TAG, "punching client >>>> inetSocketAddress:" + inetSocketAddress );
+                Socket socket = null;
+                int localPort = 0;
+
+                try {
+                    socket = SocketFactory.getDefault().createSocket();
+                    socket.bind(new InetSocketAddress(CLIENT_LOCAL_SOCKET_PORT));
+                    network.bindSocket(socket);
+                    socket.setReuseAddress(true);
+                    socket.connect(inetSocketAddress, 3000);
+
+                } catch (IOException e) {
+                    AppLog.e(TAG, "punching client socket connect failed!!!" + e.getMessage());
+                    msg.obj = e.getMessage();
+                }
+
+                try {
+                    if(socket!=null)socket.close();
+                } catch (IOException e) {
+                    AppLog.e(TAG, "punching client socket close failed!!!" + e.getMessage());
+                }
+                socket = null;
+
+                msg.arg1 = PUNCHING_STATUS_ERROR_OK;
+                handler.sendMessage(msg);
+            }
+        };
+        new Thread(punchingRunnable).start();
+    }
+
+    private void connect2Server(final Network network, final String ip, final int port) {
+        Runnable socketRunnable = new Runnable() {
+            @Override
+            public void run() {
+                Message msg = new Message();
+                msg.what = MESSAGE_CONNECT_TO_SERVER;
+
+                InetAddress addr = null;
+                try {
+                    addr = InetAddress.getByName(ip);
+                } catch (IOException e) {
+                    AppLog.e(TAG, "connect2Server, error!" + e.getMessage());
+                    msg.obj = e.getMessage();
+                    handler.sendMessage(msg);
+                    return;
+                }
+
+                AppLog.i(TAG, "connect2Server >>>>> [ IP:" +  ip + " port:" + port);
+
+                InetSocketAddress inetSocketAddress = new InetSocketAddress(addr, port);
+                Socket socket;
+                int localPort = 0;
+
+                try {
+                    if (clientSocket!=null)clientSocket.connect(inetSocketAddress, 3000);
+                } catch (IOException e) {
+                    AppLog.e(TAG, "connect2Server, error!" + e.getMessage());
+                    msg.obj = e.getMessage();
+                    handler.sendMessage(msg);
+                    return;
+                }
+
+                AppLog.i(TAG, "connect2Server, successfully! ");
+                handler.sendMessage(msg);
+            }
+        };
+        new Thread(socketRunnable).start();
+    }
+
+    public void uploadIp2Redis(final Network network) {
 
         Runnable uploadRunnable = new Runnable() {
             @Override
             public void run() {
-                String strMsg;
-                AppLog.i(TAG, "upload server ip to redis ...");
+                String strMsg = "null";
+                AppLog.i(TAG, "upload ip to redis server...");
+                String serverPerfix = "mac=server&time=";
+                String clientPerfix = "mac=client&time=";
                 try {
                     String data;
 
                     if (isValidIpV6(publicIpV6Address)) {
-                        data = "mac=com.obana.ipv6&time=" + System.currentTimeMillis()
+                        data = (mWorkMode == LAYOUT_SERVER?serverPerfix:clientPerfix) + System.currentTimeMillis()
                                 + "&ipaddr=" + publicIpV6Address;
                     } else {
                         if (isValidIpV6(localIpV6Address)) {
-                            data = "mac=com.obana.ipv6&time=" + System.currentTimeMillis()
+                            data = (mWorkMode == LAYOUT_SERVER?serverPerfix:clientPerfix)  + System.currentTimeMillis()
                                     + "&ipaddr=" + localIpV6Address;
                         } else {
-                            strMsg = "get server ip failed!";
+                            strMsg = "upload ip failed!";
                             Message msg = new Message();
                             msg.what = MESSAGE_UPLOAD_IP_STATUS;
                             msg.obj = strMsg;
@@ -586,7 +802,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
                     String urlValue = UPLOAD_IP_URL + data;
 
-                    AppLog.i(TAG, "server ip: " + data);
+                    //AppLog.i(TAG, "server ip: " + data);
 
                     URL url =new URL(urlValue);
                     HttpURLConnection connection = network != null ? (HttpURLConnection)network.openConnection(url)
