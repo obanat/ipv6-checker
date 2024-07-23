@@ -37,6 +37,18 @@
         <TextView android:id="@+id/ipv6_local" android:layout_width="match_parent" android:layout_height="wrap_content" />
     </LinearLayout>
 
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="客户端ip：" />
+        <TextView android:id="@+id/ipv6_client" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="打洞状态：" />
+        <TextView android:id="@+id/punching_status" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
         <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="ip上传：" />
         <TextView android:id="@+id/upload_status" android:layout_width="match_parent" android:layout_height="wrap_content" />
