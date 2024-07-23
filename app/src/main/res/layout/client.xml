@@ -12,8 +12,8 @@
         android:gravity="center">
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
-            <RadioButton android:id="@+id/radio_client" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="客户端模式" />
-            <RadioButton android:id="@+id/radio_server" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="服务器模式" />
+            <RadioButton android:id="@+id/radio_client" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="客户端模式" android:checked="true" />
+            <RadioButton android:id="@+id/radio_server" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="服务器模式" android:checked="false" />
         </LinearLayout>
     </RadioGroup>
 
@@ -38,15 +38,25 @@
     </LinearLayout>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="ip上传：" />
+        <TextView android:id="@+id/upload_status" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
         <TextView android:layout_width="80dp" android:layout_height="wrap_content" android:text="srv地址：" />
         <TextView android:id="@+id/server_ip" android:layout_width="match_parent" android:layout_height="wrap_content" />
     </LinearLayout>
 
 
-    <Button
-        android:id="@+id/load_web"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="加载网页" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <Button
+            android:id="@+id/load_web"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="连接Server" />
+        <TextView android:id="@+id/connect_status" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </LinearLayout>
+
+
 
     <WebView
         android:id="@+id/web_view"
